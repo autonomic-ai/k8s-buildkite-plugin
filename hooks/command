@@ -22,7 +22,7 @@ trap cleanup EXIT
 
 function tail_logs {
   while true ; do
-    stdbuf -o0 -e0 kubectl logs -f "job/${job_name}" 2>>/dev/null || true
+    stdbuf -o0 -e0 kubectl logs -f -c main "${job_name}" 2>>/dev/null || true
     sleep 0.2
   done
 }
@@ -31,22 +31,24 @@ echo "--- :kubernetes: Starting Kubernetes Job"
 
 export patchFunc=${BUILDKITE_PLUGIN_K8S_PATCH:-"function(f) f"}
 
-jobspec=$(jsonnet \
-  --tla-str "jobName=${job_name}" \
-  --tla-str-file "stepEnvFile=${BUILDKITE_ENV_FILE}" \
-  --tla-code "agentEnv=$(jq -c -n env)" \
-  --tla-code patchFunc \
-  "${basedir}/lib/job.jsonnet")
+# jobspec=$(jsonnet \
+#   --tla-str "jobName=${job_name}" \
+#   --tla-str-file "stepEnvFile=${BUILDKITE_ENV_FILE}" \
+#   --tla-code "agentEnv=$(jq -c -n env)" \
+#   --tla-code patchFunc \
+#   "${basedir}/lib/job.jsonnet")
 
-export BUILDKITE_PLUGIN_K8S_USE_AGENT_NODE_AFFINITY=${BUILDKITE_PLUGIN_K8S_USE_AGENT_NODE_AFFINITY:-'false'}
-if [[ "$BUILDKITE_PLUGIN_K8S_USE_AGENT_NODE_AFFINITY" == 'true' ]]; then
-  for field in affinity tolerations; do
-    buildkite_agent_value=$(kubectl get pod "$(cat /etc/hostname)" -o json | jq ".spec.$field")
-    jobspec=$(echo "$jobspec" | jq ".spec.template.spec.$field=$buildkite_agent_value")
-  done
-fi
+# export BUILDKITE_PLUGIN_K8S_USE_AGENT_NODE_AFFINITY=${BUILDKITE_PLUGIN_K8S_USE_AGENT_NODE_AFFINITY:-'false'}
+# if [[ "$BUILDKITE_PLUGIN_K8S_USE_AGENT_NODE_AFFINITY" == 'true' ]]; then
+#   for field in affinity tolerations; do
+#     buildkite_agent_value=$(kubectl get pod "$(cat /etc/hostname)" -o json | jq ".spec.$field")
+#     jobspec=$(echo "$jobspec" | jq ".spec.template.spec.$field=$buildkite_agent_value")
+#   done
+# fi
 
-echo "$jobspec" | kubectl apply -f -
+# echo "$jobspec" | kubectl apply -f -
+
+argo submit --name "$job_name" --from workflowtemplate/workflow-template-submittable --entrypoint "whalesay-template"
 
 echo "Timeout: ${timeout}s"
 
@@ -58,7 +60,7 @@ sleeper=2
 counter=${timeout}
 jobstatus=""
 while [[ -z "$jobstatus" ]] ; do
-  jobstatus=$(kubectl get job "${job_name}" -o 'jsonpath={.status.conditions[].type}')
+  jobstatus=$(kubectl get workflow "${job_name}" -o 'jsonpath={.status.conditions[].type}')
   sleep $sleeper
   if [[ $timeout -gt 0 ]]; then
     (( counter -= sleeper )) || jobstatus="timeout"

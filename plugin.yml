@@ -5,6 +5,7 @@ requirements:
 - jq
 - jsonnet
 - kubectl
+- argo
 configuration:
   properties:
     image:
